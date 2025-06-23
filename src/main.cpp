@@ -94,6 +94,61 @@ MassButton massButtons[] = {
     {0.5f, 0.6f, 0.5f, 0.08f, 10.0f, "10x Mass"}};
 const int NUM_MASS_BUTTONS = 3;
 
+// Reset button for Newton's Cradle
+struct ResetButton
+{
+    float x, y, width, height;
+    const char *label;
+};
+
+ResetButton resetButton = {-0.9f, 0.75f, 0.5f, 0.08f, "Reset"};
+
+// Fluid flow parameters
+struct FluidParticle
+{
+    float x, y;
+    float vx, vy;
+    float radius;
+    glm::vec3 color;
+    bool active;
+};
+
+// Speed control buttons for fluid demo
+struct SpeedButton
+{
+    float x, y, width, height;
+    float speed;
+    const char *label;
+};
+
+SpeedButton speedButtons[] = {
+    {-0.9f, 0.6f, 0.5f, 0.08f, 0.002f, "Slow"},
+    {-0.2f, 0.6f, 0.5f, 0.08f, 0.005f, "Medium"},
+    {0.5f, 0.6f, 0.5f, 0.08f, 0.01f, "Fast"}};
+const int NUM_SPEED_BUTTONS = 3;
+
+// Shape types for aerodynamics demo
+enum class ObstacleShape
+{
+    BALL,
+    TRIANGLE,
+    AIRFOIL
+};
+
+// Shape selection buttons
+struct ShapeButton
+{
+    float x, y, width, height;
+    ObstacleShape shape;
+    const char *label;
+};
+
+ShapeButton shapeButtons[] = {
+    {-0.9f, 0.75f, 0.5f, 0.08f, ObstacleShape::BALL, "Ball"},
+    {-0.2f, 0.75f, 0.5f, 0.08f, ObstacleShape::TRIANGLE, "Triangle"},
+    {0.5f, 0.75f, 0.5f, 0.08f, ObstacleShape::AIRFOIL, "Airfoil"}};
+const int NUM_SHAPE_BUTTONS = 3;
+
 // Ball array and count
 const int MAX_BALLS = 50;
 Ball balls[MAX_BALLS];
@@ -115,11 +170,54 @@ Square square2 = {0.3f, 0.0f, -0.003f, 0.0f, 0.1f, 1.0f, glm::vec3(0.0f, 0.0f, 1
 const int NUM_SQUARES = 2;
 Square squares[NUM_SQUARES] = {square, square2};
 
+// Newton's Cradle structures
+struct Pendulum
+{
+    float x, y;       // Current position
+    float angle;      // Current angle (radians)
+    float angularVel; // Angular velocity
+    float length;     // Length of pendulum string
+    float mass;       // Mass of the bob
+    float radius;     // Radius of the bob
+    glm::vec3 color;  // Color of the bob
+    bool isDragging;  // Whether this pendulum is being dragged
+};
+
+// Newton's Cradle parameters
+const int NUM_PENDULUMS = 5;
+Pendulum pendulums[NUM_PENDULUMS];
+const float PENDULUM_LENGTH = 0.8f;
+const float PENDULUM_SPACING = 0.12f;
+const float PENDULUM_RADIUS = 0.05f;
+const float PENDULUM_MASS = 1.0f;
+const float GRAVITY = 0.001f;
+const float DAMPING = 0.999f;
+const float COLLISION_DISTANCE = PENDULUM_RADIUS * 2.0f;
+
+// Newton's Cradle initialization function prototype
+void initNewtonsCradle();
+
+// Newton's Cradle update function prototype
+void updateNewtonsCradle();
+
+// Newton's Cradle reset function prototype
+void resetNewtonsCradle();
+
 // Box boundaries
 const float BOX_LEFT = -0.8f;
 const float BOX_RIGHT = 0.8f;
 const float BOX_TOP = 0.6f;
 const float BOX_BOTTOM = -0.6f;
+
+// Fluid demo parameters
+const int MAX_FLUID_PARTICLES = 200;
+FluidParticle fluidParticles[MAX_FLUID_PARTICLES];
+int NUM_FLUID_PARTICLES = 0;
+float streamSpeed = 0.005f;
+float obstacleX = 0.0f;
+float obstacleY = 0.0f;
+float obstacleRadius = 0.15f;
+ObstacleShape currentShape = ObstacleShape::BALL;
 
 // Vertex Shader source code
 const char *vertexShaderSource = R"(
@@ -240,6 +338,65 @@ void mouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
                 {
                     initSquareMasses(b.massRatio);
                     resetSquares();
+                    return;
+                }
+            }
+            // Check if back button was clicked
+            if (normalizedX >= backButton.x && normalizedX <= backButton.x + backButton.width &&
+                normalizedY >= backButton.y && normalizedY <= backButton.y + backButton.height)
+            {
+                currentScreen = Screen::MAIN_MENU;
+            }
+        }
+        else if (currentScreen == Screen::GREEN_DEMO)
+        {
+            // Check if reset button was clicked
+            if (normalizedX >= resetButton.x && normalizedX <= resetButton.x + resetButton.width &&
+                normalizedY >= resetButton.y && normalizedY <= resetButton.y + resetButton.height)
+            {
+                resetNewtonsCradle();
+                return;
+            }
+            // Check if back button was clicked
+            if (normalizedX >= backButton.x && normalizedX <= backButton.x + backButton.width &&
+                normalizedY >= backButton.y && normalizedY <= backButton.y + backButton.height)
+            {
+                currentScreen = Screen::MAIN_MENU;
+            }
+            else
+            {
+                // Check if clicking on any pendulum to pull it and all balls to its left back
+                for (int i = 0; i < NUM_PENDULUMS; i++)
+                {
+                    float bobX = pendulums[i].x + pendulums[i].length * sin(pendulums[i].angle);
+                    float bobY = pendulums[i].y - pendulums[i].length * cos(pendulums[i].angle);
+
+                    float clickDistance = sqrt((normalizedX - bobX) * (normalizedX - bobX) +
+                                               (normalizedY - bobY) * (normalizedY - bobY));
+
+                    if (clickDistance < pendulums[i].radius * 2.0f)
+                    {
+                        // Pull back this pendulum and all pendulums to its left
+                        for (int j = 0; j <= i; j++)
+                        {
+                            pendulums[j].angle = -0.5f;     // Pull back about 30 degrees
+                            pendulums[j].angularVel = 0.0f; // Reset velocity
+                        }
+                        break; // Exit the loop after finding the clicked ball
+                    }
+                }
+            }
+        }
+        else if (currentScreen == Screen::YELLOW_DEMO)
+        {
+            // Check if a shape button was clicked
+            for (int i = 0; i < NUM_SHAPE_BUTTONS; i++)
+            {
+                ShapeButton &b = shapeButtons[i];
+                if (normalizedX >= b.x && normalizedX <= b.x + b.width &&
+                    normalizedY >= b.y && normalizedY <= b.y + b.height)
+                {
+                    currentShape = b.shape;
                     return;
                 }
             }
@@ -510,6 +667,78 @@ void createSquareVertices(float centerX, float centerY, float size, glm::vec3 co
     vertices[vertexIndex++] = color.b;
 }
 
+// Create pendulum string vertex data
+void createPendulumString(float anchorX, float anchorY, float bobX, float bobY, glm::vec3 color, float vertices[], int &vertexIndex)
+{
+    // Create a thin line for the string
+    float thickness = 0.002f;
+
+    // Calculate string direction
+    float dx = bobX - anchorX;
+    float dy = bobY - anchorY;
+    float length = sqrt(dx * dx + dy * dy);
+
+    if (length > 0.001f)
+    {
+        // Normalize direction
+        dx /= length;
+        dy /= length;
+
+        // Perpendicular vector for thickness
+        float perpX = -dy * thickness;
+        float perpY = dx * thickness;
+
+        // Create a thin rectangle for the string
+        // Top-left
+        vertices[vertexIndex++] = anchorX + perpX;
+        vertices[vertexIndex++] = anchorY + perpY;
+        vertices[vertexIndex++] = 0.0f;
+        vertices[vertexIndex++] = color.r;
+        vertices[vertexIndex++] = color.g;
+        vertices[vertexIndex++] = color.b;
+
+        // Top-right
+        vertices[vertexIndex++] = anchorX - perpX;
+        vertices[vertexIndex++] = anchorY - perpY;
+        vertices[vertexIndex++] = 0.0f;
+        vertices[vertexIndex++] = color.r;
+        vertices[vertexIndex++] = color.g;
+        vertices[vertexIndex++] = color.b;
+
+        // Bottom-right
+        vertices[vertexIndex++] = bobX - perpX;
+        vertices[vertexIndex++] = bobY - perpY;
+        vertices[vertexIndex++] = 0.0f;
+        vertices[vertexIndex++] = color.r;
+        vertices[vertexIndex++] = color.g;
+        vertices[vertexIndex++] = color.b;
+
+        // Top-left
+        vertices[vertexIndex++] = anchorX + perpX;
+        vertices[vertexIndex++] = anchorY + perpY;
+        vertices[vertexIndex++] = 0.0f;
+        vertices[vertexIndex++] = color.r;
+        vertices[vertexIndex++] = color.g;
+        vertices[vertexIndex++] = color.b;
+
+        // Bottom-right
+        vertices[vertexIndex++] = bobX - perpX;
+        vertices[vertexIndex++] = bobY - perpY;
+        vertices[vertexIndex++] = 0.0f;
+        vertices[vertexIndex++] = color.r;
+        vertices[vertexIndex++] = color.g;
+        vertices[vertexIndex++] = color.b;
+
+        // Bottom-left
+        vertices[vertexIndex++] = bobX + perpX;
+        vertices[vertexIndex++] = bobY + perpY;
+        vertices[vertexIndex++] = 0.0f;
+        vertices[vertexIndex++] = color.r;
+        vertices[vertexIndex++] = color.g;
+        vertices[vertexIndex++] = color.b;
+    }
+}
+
 // Square mass initialization function
 void initSquareMasses(float massRatio)
 {
@@ -603,6 +832,363 @@ void updateSquare()
             }
         }
     }
+}
+
+// Newton's Cradle initialization function
+void initNewtonsCradle()
+{
+    float startX = -0.24f; // Center the 5 pendulums properly
+    for (int i = 0; i < NUM_PENDULUMS; i++)
+    {
+        pendulums[i].x = startX + i * PENDULUM_SPACING;
+        pendulums[i].y = BOX_TOP - 0.15f; // Anchor point inside the box, not at the very top
+        pendulums[i].angle = 0.0f;
+        pendulums[i].angularVel = 0.0f;
+        pendulums[i].length = PENDULUM_LENGTH * 0.8f; // Adjusted scaling for longer strings
+        pendulums[i].mass = PENDULUM_MASS;
+        pendulums[i].radius = PENDULUM_RADIUS;
+        pendulums[i].color = glm::vec3(0.0f, 1.0f, 0.0f); // Green color
+        pendulums[i].isDragging = false;
+    }
+}
+
+// Newton's Cradle update function
+void updateNewtonsCradle()
+{
+    // Apply damping to all pendulums
+    for (int i = 0; i < NUM_PENDULUMS; i++)
+    {
+        pendulums[i].angularVel *= DAMPING;
+    }
+
+    // Update pendulum physics
+    for (int i = 0; i < NUM_PENDULUMS; i++)
+    {
+        // Simple pendulum physics
+        pendulums[i].angularVel -= GRAVITY * sin(pendulums[i].angle) / pendulums[i].length;
+        pendulums[i].angle += pendulums[i].angularVel;
+    }
+
+    // Check collisions between adjacent pendulums
+    for (int i = 0; i < NUM_PENDULUMS - 1; i++)
+    {
+        float bob1X = pendulums[i].x + pendulums[i].length * sin(pendulums[i].angle);
+        float bob1Y = pendulums[i].y - pendulums[i].length * cos(pendulums[i].angle);
+        float bob2X = pendulums[i + 1].x + pendulums[i + 1].length * sin(pendulums[i + 1].angle);
+        float bob2Y = pendulums[i + 1].y - pendulums[i + 1].length * cos(pendulums[i + 1].angle);
+
+        float dx = bob2X - bob1X;
+        float dy = bob2Y - bob1Y;
+        float distance = sqrt(dx * dx + dy * dy);
+
+        // Only handle collision if balls are overlapping and moving toward each other
+        if (distance < COLLISION_DISTANCE && distance > 0.001f)
+        {
+            // Calculate velocities of bobs
+            float vel1X = pendulums[i].angularVel * pendulums[i].length * cos(pendulums[i].angle);
+            float vel1Y = -pendulums[i].angularVel * pendulums[i].length * sin(pendulums[i].angle);
+            float vel2X = pendulums[i + 1].angularVel * pendulums[i + 1].length * cos(pendulums[i + 1].angle);
+            float vel2Y = -pendulums[i + 1].angularVel * pendulums[i + 1].length * sin(pendulums[i + 1].angle);
+
+            // Relative velocity along collision normal
+            float normalX = dx / distance;
+            float normalY = dy / distance;
+            float relVelX = vel2X - vel1X;
+            float relVelY = vel2Y - vel1Y;
+            float relVelAlongNormal = relVelX * normalX + relVelY * normalY;
+
+            // Only apply collision if balls are moving toward each other
+            if (relVelAlongNormal < 0)
+            {
+                // Elastic collision - swap angular velocities
+                float tempVel = pendulums[i].angularVel;
+                pendulums[i].angularVel = pendulums[i + 1].angularVel;
+                pendulums[i + 1].angularVel = tempVel;
+
+                // Immediately separate balls by adjusting their positions
+                // This prevents multiple collisions in the same frame
+                float overlap = COLLISION_DISTANCE - distance;
+                float separationX = overlap * normalX * 0.6f; // Slightly more separation
+                float separationY = overlap * normalY * 0.6f;
+
+                // Calculate new positions that maintain pendulum constraints
+                float newBob1X = bob1X - separationX;
+                float newBob1Y = bob1Y - separationY;
+                float newBob2X = bob2X + separationX;
+                float newBob2Y = bob2Y + separationY;
+
+                // Convert back to angles while maintaining pendulum constraints
+                float newAngle1 = asin((newBob1X - pendulums[i].x) / pendulums[i].length);
+                float newAngle2 = asin((newBob2X - pendulums[i + 1].x) / pendulums[i + 1].length);
+
+                // Apply the new angles
+                pendulums[i].angle = newAngle1;
+                pendulums[i + 1].angle = newAngle2;
+            }
+        }
+    }
+}
+
+// Function to reset Newton's Cradle
+void resetNewtonsCradle()
+{
+    for (int i = 0; i < NUM_PENDULUMS; i++)
+    {
+        pendulums[i].angle = 0.0f;
+        pendulums[i].angularVel = 0.0f;
+    }
+}
+
+// Fluid demo function prototypes
+void initFluidDemo();
+void updateFluidDemo();
+void spawnFluidParticle();
+
+// Shape collision detection function prototypes
+bool checkBallCollision(float x, float y, float radius);
+bool checkTriangleCollision(float x, float y, float radius);
+bool checkAirfoilCollision(float x, float y, float radius);
+
+// Fluid demo functions
+void initFluidDemo()
+{
+    NUM_FLUID_PARTICLES = 0;
+    streamSpeed = 0.01f; // Fast speed by default
+    obstacleX = 0.0f;
+    obstacleY = 0.0f;
+    obstacleRadius = 0.15f;
+
+    // Initialize all particles as inactive
+    for (int i = 0; i < MAX_FLUID_PARTICLES; i++)
+    {
+        fluidParticles[i].active = false;
+    }
+}
+
+void spawnFluidParticle()
+{
+    // Find an inactive particle
+    for (int i = 0; i < MAX_FLUID_PARTICLES; i++)
+    {
+        if (!fluidParticles[i].active)
+        {
+            // Spawn on the left edge with some random vertical position
+            fluidParticles[i].x = BOX_LEFT + 0.05f;
+            fluidParticles[i].y = BOX_BOTTOM + 0.1f + (float)rand() / RAND_MAX * (BOX_TOP - BOX_BOTTOM - 0.2f);
+            fluidParticles[i].vx = streamSpeed; // Always move right
+            fluidParticles[i].vy = 0.0f;        // No vertical velocity initially
+            fluidParticles[i].radius = 0.008f;
+            fluidParticles[i].color = glm::vec3(1.0f, 1.0f, 0.0f); // Yellow particles
+            fluidParticles[i].active = true;
+            NUM_FLUID_PARTICLES++;
+            break;
+        }
+    }
+}
+
+void updateFluidDemo()
+{
+    // Continuously spawn new particles to keep the stream full
+    int activeCount = 0;
+    for (int i = 0; i < MAX_FLUID_PARTICLES; i++)
+    {
+        if (fluidParticles[i].active)
+            activeCount++;
+    }
+    // Try to keep the stream full
+    int particlesToSpawn = MAX_FLUID_PARTICLES - activeCount;
+    for (int i = 0; i < particlesToSpawn; i++)
+    {
+        spawnFluidParticle();
+    }
+
+    // Update all active particles
+    for (int i = 0; i < MAX_FLUID_PARTICLES; i++)
+    {
+        if (!fluidParticles[i].active)
+            continue;
+        FluidParticle &p = fluidParticles[i];
+        // Update position
+        p.x += p.vx;
+        p.y += p.vy;
+        // Check collision with obstacle based on current shape
+        bool collision = false;
+        switch (currentShape)
+        {
+        case ObstacleShape::BALL:
+            collision = checkBallCollision(p.x, p.y, p.radius);
+            break;
+        case ObstacleShape::TRIANGLE:
+            collision = checkTriangleCollision(p.x, p.y, p.radius);
+            break;
+        case ObstacleShape::AIRFOIL:
+            collision = checkAirfoilCollision(p.x, p.y, p.radius);
+            break;
+        }
+        if (collision)
+        {
+            float dx = p.x - obstacleX;
+            float dy = p.y - obstacleY;
+            float distance = sqrt(dx * dx + dy * dy);
+            if (distance > 0.001f)
+            {
+                float pushDistance = obstacleRadius + p.radius + 0.01f;
+                p.x = obstacleX + (dx / distance) * pushDistance;
+                p.y = obstacleY + (dy / distance) * pushDistance;
+                float flowForce = streamSpeed * 0.5f;
+                float normalX = dx / distance;
+                float normalY = dy / distance;
+                p.vx += normalY * flowForce;
+                p.vy -= normalX * flowForce;
+                if (p.vx < streamSpeed * 0.5f)
+                {
+                    p.vx = streamSpeed * 0.5f;
+                }
+            }
+        }
+        // Check collision with box walls - particles flow through, not bounce
+        if (p.x - p.radius <= BOX_LEFT)
+        {
+            p.x = BOX_LEFT + p.radius;
+            p.vx = streamSpeed;
+        }
+        if (p.y - p.radius <= BOX_BOTTOM)
+        {
+            p.y = BOX_BOTTOM + p.radius;
+            p.vy = 0.0f;
+        }
+        if (p.y + p.radius >= BOX_TOP)
+        {
+            p.y = BOX_TOP - p.radius;
+            p.vy = 0.0f;
+        }
+        // Remove particles that reach or pass the right edge
+        if (p.x - p.radius >= BOX_RIGHT)
+        {
+            p.active = false;
+            NUM_FLUID_PARTICLES--;
+        }
+        // Add small amount of damping to prevent excessive turbulence
+        p.vx *= 0.998f;
+        p.vy *= 0.998f;
+        if (streamSpeed > 0.007f)
+        {
+            p.vx += ((float)rand() / RAND_MAX - 0.5f) * 0.0003f;
+            p.vy += ((float)rand() / RAND_MAX - 0.5f) * 0.0003f;
+        }
+    }
+}
+
+// Shape collision detection functions
+bool checkBallCollision(float x, float y, float radius)
+{
+    float dx = x - obstacleX;
+    float dy = y - obstacleY;
+    float distance = sqrt(dx * dx + dy * dy);
+    return distance < obstacleRadius + radius;
+}
+
+bool checkTriangleCollision(float x, float y, float radius)
+{
+    // Triangle vertices (equilateral triangle pointing right) - same as rendering
+    float size = obstacleRadius * 2.0f; // Side length
+    float h = size * sqrt(3.0f) / 2.0f; // Height
+    float v1x = obstacleX - size / 2.0f, v1y = obstacleY - h / 3.0f;
+    float v2x = obstacleX + size / 2.0f, v2y = obstacleY - h / 3.0f;
+    float v3x = obstacleX, v3y = obstacleY + 2.0f * h / 3.0f;
+
+    // First check if point is inside triangle (including radius)
+    // Use barycentric coordinates
+    float denominator = ((v2y - v3y) * (v1x - v3x) + (v3x - v2x) * (v1y - v3y));
+    if (abs(denominator) < 0.0001f)
+        return false; // Degenerate triangle
+
+    float w1 = ((v2y - v3y) * (x - v3x) + (v3x - v2x) * (y - v3y)) / denominator;
+    float w2 = ((v3y - v1y) * (x - v3x) + (v1x - v3x) * (y - v3y)) / denominator;
+    float w3 = 1.0f - w1 - w2;
+
+    // Check if point is inside triangle (with some tolerance for radius)
+    if (w1 >= -0.1f && w2 >= -0.1f && w3 >= -0.1f)
+    {
+        return true;
+    }
+
+    // Also check distance to edges for particles near the boundary
+    float minDist = 1000.0f;
+
+    // Edge 1: v1 to v2
+    float edge1x = v2x - v1x, edge1y = v2y - v1y;
+    float edge1Len = sqrt(edge1x * edge1x + edge1y * edge1y);
+    if (edge1Len > 0.0001f)
+    {
+        edge1x /= edge1Len;
+        edge1y /= edge1Len;
+        float proj1 = (x - v1x) * edge1x + (y - v1y) * edge1y;
+        if (proj1 >= -radius && proj1 <= edge1Len + radius)
+        {
+            float dist1 = abs((x - v1x) * edge1y - (y - v1y) * edge1x);
+            minDist = std::min(minDist, dist1);
+        }
+    }
+
+    // Edge 2: v2 to v3
+    float edge2x = v3x - v2x, edge2y = v3y - v2y;
+    float edge2Len = sqrt(edge2x * edge2x + edge2y * edge2y);
+    if (edge2Len > 0.0001f)
+    {
+        edge2x /= edge2Len;
+        edge2y /= edge2Len;
+        float proj2 = (x - v2x) * edge2x + (y - v2y) * edge2y;
+        if (proj2 >= -radius && proj2 <= edge2Len + radius)
+        {
+            float dist2 = abs((x - v2x) * edge2y - (y - v2y) * edge2x);
+            minDist = std::min(minDist, dist2);
+        }
+    }
+
+    // Edge 3: v3 to v1
+    float edge3x = v1x - v3x, edge3y = v1y - v3y;
+    float edge3Len = sqrt(edge3x * edge3x + edge3y * edge3y);
+    if (edge3Len > 0.0001f)
+    {
+        edge3x /= edge3Len;
+        edge3y /= edge3Len;
+        float proj3 = (x - v3x) * edge3x + (y - v3y) * edge3y;
+        if (proj3 >= -radius && proj3 <= edge3Len + radius)
+        {
+            float dist3 = abs((x - v3x) * edge3y - (y - v3y) * edge3x);
+            minDist = std::min(minDist, dist3);
+        }
+    }
+
+    return minDist < radius;
+}
+
+bool checkAirfoilCollision(float x, float y, float radius)
+{
+    // Use the same NACA formula as the rendering
+    float chord = obstacleRadius * 2.0f;
+    float maxThickness = obstacleRadius * 0.8f;
+    float dx = x - obstacleX;
+
+    // Check if particle is within the airfoil's chord length
+    if (dx >= -chord * 0.5f && dx <= chord * 0.5f)
+    {
+        // Convert to normalized coordinates (0 to 1)
+        float xc = (dx + chord * 0.5f) / chord;
+
+        // NACA 00xx thickness formula (same as rendering)
+        float yt = 5.0f * maxThickness * (0.2969f * sqrt(xc) - 0.1260f * xc - 0.3516f * xc * xc + 0.2843f * xc * xc * xc - 0.1015f * xc * xc * xc * xc);
+
+        // Check if particle is within the airfoil thickness (including radius)
+        float dy = y - obstacleY;
+        if (abs(dy) <= yt + radius)
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 int main()
@@ -747,6 +1333,14 @@ int main()
         createSquareVertices(squares[i].x, squares[i].y, squares[i].size, squares[i].color, squareVertices, squareVertexIndex);
     }
 
+    // Create pendulum string vertex data
+    float pendulumStringVertices[NUM_PENDULUMS * 6 * 6]; // NUM_PENDULUMS * 6 vertices * 6 floats per vertex
+    int pendulumStringVertexIndex = 0;
+    for (int i = 0; i < NUM_PENDULUMS; i++)
+    {
+        createPendulumString(pendulums[i].x, pendulums[i].y, pendulums[i].x + pendulums[i].length * sin(pendulums[i].angle), pendulums[i].y - pendulums[i].length * cos(pendulums[i].angle), pendulums[i].color, pendulumStringVertices, pendulumStringVertexIndex);
+    }
+
     // Vertex Buffer Object (VBO) and Vertex Array Object (VAO) for main menu buttons
     unsigned int VBO, VAO;
     glGenVertexArrays(1, &VAO);
@@ -818,6 +1412,20 @@ int main()
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
+    // VBO/VAO for pendulum string
+    unsigned int pendulumStringVBO, pendulumStringVAO;
+    glGenVertexArrays(1, &pendulumStringVAO);
+    glGenBuffers(1, &pendulumStringVBO);
+    glBindVertexArray(pendulumStringVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, pendulumStringVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(pendulumStringVertices), pendulumStringVertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
     // Get uniform locations
     unsigned int modelLoc = glGetUniformLocation(shaderProgram, "model");
     unsigned int projectionLoc = glGetUniformLocation(shaderProgram, "projection");
@@ -828,6 +1436,12 @@ int main()
     // Initialize squares with equal mass
     initSquareMasses(1.0f);
     resetSquares();
+
+    // Initialize Newton's Cradle
+    initNewtonsCradle();
+
+    // Initialize Fluid Demo
+    initFluidDemo();
 
     // Render loop
     while (!glfwWindowShouldClose(window))
@@ -843,6 +1457,14 @@ int main()
         else if (currentScreen == Screen::BLUE_DEMO)
         {
             updateSquare();
+        }
+        else if (currentScreen == Screen::GREEN_DEMO)
+        {
+            updateNewtonsCradle();
+        }
+        else if (currentScreen == Screen::YELLOW_DEMO)
+        {
+            updateFluidDemo();
         }
 
         // Render
@@ -976,33 +1598,360 @@ int main()
             // Other demo screens
             glm::vec3 demoColor;
             const char *demoName;
+            // Declare all variables needed for GREEN_DEMO rendering here to avoid C++ jump-to-case errors
+            float stringVertices[NUM_PENDULUMS * 2 * 6];
+            int stringVertexIndex = 0;
+            float pendulumBobVertices[NUM_PENDULUMS * 32 * 3 * 6];
+            int pendulumBobVertexIndex = 0;
+            unsigned int pbVBO = 0, pbVAO = 0, strVBO = 0, strVAO = 0;
+            glm::mat4 projection;
+            glm::mat4 model;
+
             switch (currentScreen)
             {
             case Screen::GREEN_DEMO:
-                demoColor = glm::vec3(0.0f, 1.0f, 0.0f);
-                demoName = "Green Demo";
+            {
+                // Newton's Cradle demo
+                glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black background
+                glClear(GL_COLOR_BUFFER_BIT);
+
+                glUseProgram(shaderProgram);
+                projection = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, -1.0f, 1.0f);
+                glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+                model = glm::mat4(1.0f);
+                glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+                // Draw box walls (reuse boxVAO)
+                glBindVertexArray(boxVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 4 * 6); // 4 walls * 6 vertices
+
+                // Draw pendulum strings as lines
+                stringVertexIndex = 0;
+                for (int i = 0; i < NUM_PENDULUMS; i++)
+                {
+                    float anchorX = pendulums[i].x;
+                    float anchorY = pendulums[i].y;
+                    float bobX = pendulums[i].x + pendulums[i].length * sin(pendulums[i].angle);
+                    float bobY = pendulums[i].y - pendulums[i].length * cos(pendulums[i].angle);
+                    glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f); // White string
+                    // Anchor point
+                    stringVertices[stringVertexIndex++] = anchorX;
+                    stringVertices[stringVertexIndex++] = anchorY;
+                    stringVertices[stringVertexIndex++] = 0.0f;
+                    stringVertices[stringVertexIndex++] = color.r;
+                    stringVertices[stringVertexIndex++] = color.g;
+                    stringVertices[stringVertexIndex++] = color.b;
+                    // Bob point
+                    stringVertices[stringVertexIndex++] = bobX;
+                    stringVertices[stringVertexIndex++] = bobY;
+                    stringVertices[stringVertexIndex++] = 0.0f;
+                    stringVertices[stringVertexIndex++] = color.r;
+                    stringVertices[stringVertexIndex++] = color.g;
+                    stringVertices[stringVertexIndex++] = color.b;
+                }
+                glGenVertexArrays(1, &strVAO);
+                glGenBuffers(1, &strVBO);
+                glBindVertexArray(strVAO);
+                glBindBuffer(GL_ARRAY_BUFFER, strVBO);
+                glBufferData(GL_ARRAY_BUFFER, sizeof(stringVertices), stringVertices, GL_STATIC_DRAW);
+                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+                glEnableVertexAttribArray(0);
+                glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+                glEnableVertexAttribArray(1);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                glBindVertexArray(strVAO);
+                glDrawArrays(GL_LINES, 0, NUM_PENDULUMS * 2);
+                glDeleteVertexArrays(1, &strVAO);
+                glDeleteBuffers(1, &strVBO);
+
+                // Draw pendulum bobs as green balls
+                pendulumBobVertexIndex = 0;
+                for (int i = 0; i < NUM_PENDULUMS; i++)
+                {
+                    float bobX = pendulums[i].x + pendulums[i].length * sin(pendulums[i].angle);
+                    float bobY = pendulums[i].y - pendulums[i].length * cos(pendulums[i].angle);
+                    createCircle(bobX, bobY, pendulums[i].radius, glm::vec3(0.0f, 1.0f, 0.0f), pendulumBobVertices, pendulumBobVertexIndex);
+                }
+                glGenVertexArrays(1, &pbVAO);
+                glGenBuffers(1, &pbVBO);
+                glBindVertexArray(pbVAO);
+                glBindBuffer(GL_ARRAY_BUFFER, pbVBO);
+                glBufferData(GL_ARRAY_BUFFER, sizeof(pendulumBobVertices), pendulumBobVertices, GL_STATIC_DRAW);
+                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+                glEnableVertexAttribArray(0);
+                glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+                glEnableVertexAttribArray(1);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                glBindVertexArray(pbVAO);
+                glDrawArrays(GL_TRIANGLES, 0, NUM_PENDULUMS * 32 * 3);
+                glDeleteVertexArrays(1, &pbVAO);
+                glDeleteBuffers(1, &pbVBO);
+
+                // Draw back button
+                glBindVertexArray(backVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+
+                // Draw reset button
+                float resetButtonVertices[6 * 6];
+                int resetVertexIndex = 0;
+                createRectangle(resetButton.x, resetButton.y, resetButton.width, resetButton.height, glm::vec3(0.3f, 0.3f, 0.3f), resetButtonVertices, resetVertexIndex);
+                unsigned int resetVBO, resetVAO;
+                glGenVertexArrays(1, &resetVAO);
+                glGenBuffers(1, &resetVBO);
+                glBindVertexArray(resetVAO);
+                glBindBuffer(GL_ARRAY_BUFFER, resetVBO);
+                glBufferData(GL_ARRAY_BUFFER, sizeof(resetButtonVertices), resetButtonVertices, GL_STATIC_DRAW);
+                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+                glEnableVertexAttribArray(0);
+                glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+                glEnableVertexAttribArray(1);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                glBindVertexArray(resetVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                glDeleteVertexArrays(1, &resetVAO);
+                glDeleteBuffers(1, &resetVBO);
                 break;
+            }
             case Screen::YELLOW_DEMO:
-                demoColor = glm::vec3(1.0f, 1.0f, 0.0f);
-                demoName = "Yellow Demo";
+            {
+                // Fluid Flow demo
+                glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black background
+                glClear(GL_COLOR_BUFFER_BIT);
+
+                glUseProgram(shaderProgram);
+                glm::mat4 projection = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, -1.0f, 1.0f);
+                glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+                glm::mat4 model = glm::mat4(1.0f);
+                glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+                // Draw box walls (reuse boxVAO)
+                glBindVertexArray(boxVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 4 * 6); // 4 walls * 6 vertices
+
+                // Draw shape buttons
+                float shapeButtonVertices[NUM_SHAPE_BUTTONS * 6 * 6];
+                int shbVertexIndex = 0;
+                for (int i = 0; i < NUM_SHAPE_BUTTONS; i++)
+                {
+                    glm::vec3 color = glm::vec3(0.4f, 0.4f, 0.4f);
+                    createRectangle(shapeButtons[i].x, shapeButtons[i].y, shapeButtons[i].width, shapeButtons[i].height, color, shapeButtonVertices, shbVertexIndex);
+                }
+                unsigned int shbVBO, shbVAO;
+                glGenVertexArrays(1, &shbVAO);
+                glGenBuffers(1, &shbVBO);
+                glBindVertexArray(shbVAO);
+                glBindBuffer(GL_ARRAY_BUFFER, shbVBO);
+                glBufferData(GL_ARRAY_BUFFER, sizeof(shapeButtonVertices), shapeButtonVertices, GL_STATIC_DRAW);
+                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+                glEnableVertexAttribArray(0);
+                glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+                glEnableVertexAttribArray(1);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                glBindVertexArray(shbVAO);
+                glDrawArrays(GL_TRIANGLES, 0, NUM_SHAPE_BUTTONS * 6);
+                glDeleteVertexArrays(1, &shbVAO);
+                glDeleteBuffers(1, &shbVBO);
+
+                // Draw obstacle based on current shape
+                switch (currentShape)
+                {
+                case ObstacleShape::BALL:
+                {
+                    // Draw circle
+                    float obstacleVertices[32 * 3 * 6];
+                    int obstacleVertexIndex = 0;
+                    createCircle(obstacleX, obstacleY, obstacleRadius, glm::vec3(0.8f, 0.8f, 0.8f), obstacleVertices, obstacleVertexIndex);
+                    unsigned int obsVBO, obsVAO;
+                    glGenVertexArrays(1, &obsVAO);
+                    glGenBuffers(1, &obsVBO);
+                    glBindVertexArray(obsVAO);
+                    glBindBuffer(GL_ARRAY_BUFFER, obsVBO);
+                    glBufferData(GL_ARRAY_BUFFER, sizeof(obstacleVertices), obstacleVertices, GL_STATIC_DRAW);
+                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+                    glEnableVertexAttribArray(0);
+                    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+                    glEnableVertexAttribArray(1);
+                    glBindBuffer(GL_ARRAY_BUFFER, 0);
+                    glBindVertexArray(obsVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 32 * 3);
+                    glDeleteVertexArrays(1, &obsVAO);
+                    glDeleteBuffers(1, &obsVBO);
+                    break;
+                }
+                case ObstacleShape::TRIANGLE:
+                {
+                    // Draw equilateral triangle sized to fit in a circle of radius obstacleRadius
+                    float size = obstacleRadius * 2.0f; // Side length
+                    float h = size * sqrt(3.0f) / 2.0f; // Height
+                    float v1x = obstacleX - size / 2.0f, v1y = obstacleY - h / 3.0f;
+                    float v2x = obstacleX + size / 2.0f, v2y = obstacleY - h / 3.0f;
+                    float v3x = obstacleX, v3y = obstacleY + 2.0f * h / 3.0f;
+                    float triangleVertices[3 * 6];
+                    int triVertexIndex = 0;
+                    // Draw as a filled triangle
+                    // Vertex 1
+                    triangleVertices[triVertexIndex++] = v1x;
+                    triangleVertices[triVertexIndex++] = v1y;
+                    triangleVertices[triVertexIndex++] = 0.0f;
+                    triangleVertices[triVertexIndex++] = 0.8f;
+                    triangleVertices[triVertexIndex++] = 0.8f;
+                    triangleVertices[triVertexIndex++] = 0.8f;
+                    // Vertex 2
+                    triangleVertices[triVertexIndex++] = v2x;
+                    triangleVertices[triVertexIndex++] = v2y;
+                    triangleVertices[triVertexIndex++] = 0.0f;
+                    triangleVertices[triVertexIndex++] = 0.8f;
+                    triangleVertices[triVertexIndex++] = 0.8f;
+                    triangleVertices[triVertexIndex++] = 0.8f;
+                    // Vertex 3
+                    triangleVertices[triVertexIndex++] = v3x;
+                    triangleVertices[triVertexIndex++] = v3y;
+                    triangleVertices[triVertexIndex++] = 0.0f;
+                    triangleVertices[triVertexIndex++] = 0.8f;
+                    triangleVertices[triVertexIndex++] = 0.8f;
+                    triangleVertices[triVertexIndex++] = 0.8f;
+                    unsigned int triVBO, triVAO;
+                    glGenVertexArrays(1, &triVAO);
+                    glGenBuffers(1, &triVBO);
+                    glBindVertexArray(triVAO);
+                    glBindBuffer(GL_ARRAY_BUFFER, triVBO);
+                    glBufferData(GL_ARRAY_BUFFER, sizeof(triangleVertices), triangleVertices, GL_STATIC_DRAW);
+                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+                    glEnableVertexAttribArray(0);
+                    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+                    glEnableVertexAttribArray(1);
+                    glBindBuffer(GL_ARRAY_BUFFER, 0);
+                    glBindVertexArray(triVAO);
+                    glDrawArrays(GL_TRIANGLES, 0, 3);
+                    glDeleteVertexArrays(1, &triVAO);
+                    glDeleteBuffers(1, &triVBO);
+                    break;
+                }
+                case ObstacleShape::AIRFOIL:
+                {
+                    // Draw a smooth, centered airfoil (NACA 00xx symmetric)
+                    const int N = 40; // Number of points per surface
+                    float chord = obstacleRadius * 2.0f;
+                    float maxThickness = obstacleRadius * 0.8f;
+                    float airfoilVertices[(N * 2) * 6];
+                    int airfoilVertexIndex = 0;
+                    // Generate upper surface (x from -0.5 to 0.5)
+                    for (int i = 0; i < N; ++i)
+                    {
+                        float t = (float)i / (N - 1);
+                        float x = (t - 0.5f) * chord;
+                        float xc = t; // 0 to 1
+                        // NACA 00xx thickness formula
+                        float yt = 5.0f * maxThickness * (0.2969f * sqrt(xc) - 0.1260f * xc - 0.3516f * xc * xc + 0.2843f * xc * xc * xc - 0.1015f * xc * xc * xc * xc);
+                        float vx = obstacleX + x;
+                        float vy = obstacleY + yt;
+                        airfoilVertices[airfoilVertexIndex++] = vx;
+                        airfoilVertices[airfoilVertexIndex++] = vy;
+                        airfoilVertices[airfoilVertexIndex++] = 0.0f;
+                        airfoilVertices[airfoilVertexIndex++] = 0.8f;
+                        airfoilVertices[airfoilVertexIndex++] = 0.8f;
+                        airfoilVertices[airfoilVertexIndex++] = 0.8f;
+                    }
+                    // Generate lower surface (x from 0.5 to -0.5)
+                    for (int i = N - 1; i >= 0; --i)
+                    {
+                        float t = (float)i / (N - 1);
+                        float x = (t - 0.5f) * chord;
+                        float xc = t;
+                        float yt = 5.0f * maxThickness * (0.2969f * sqrt(xc) - 0.1260f * xc - 0.3516f * xc * xc + 0.2843f * xc * xc * xc - 0.1015f * xc * xc * xc * xc);
+                        float vx = obstacleX + x;
+                        float vy = obstacleY - yt;
+                        airfoilVertices[airfoilVertexIndex++] = vx;
+                        airfoilVertices[airfoilVertexIndex++] = vy;
+                        airfoilVertices[airfoilVertexIndex++] = 0.0f;
+                        airfoilVertices[airfoilVertexIndex++] = 0.8f;
+                        airfoilVertices[airfoilVertexIndex++] = 0.8f;
+                        airfoilVertices[airfoilVertexIndex++] = 0.8f;
+                    }
+                    // Draw as a triangle fan
+                    unsigned int airVBO, airVAO;
+                    glGenVertexArrays(1, &airVAO);
+                    glGenBuffers(1, &airVBO);
+                    glBindVertexArray(airVAO);
+                    glBindBuffer(GL_ARRAY_BUFFER, airVBO);
+                    glBufferData(GL_ARRAY_BUFFER, sizeof(airfoilVertices), airfoilVertices, GL_STATIC_DRAW);
+                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+                    glEnableVertexAttribArray(0);
+                    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+                    glEnableVertexAttribArray(1);
+                    glBindBuffer(GL_ARRAY_BUFFER, 0);
+                    glBindVertexArray(airVAO);
+                    glDrawArrays(GL_TRIANGLE_FAN, 0, N * 2);
+                    glDeleteVertexArrays(1, &airVAO);
+                    glDeleteBuffers(1, &airVBO);
+                    break;
+                }
+                }
+
+                // Draw fluid particles
+                float fluidParticleVertices[MAX_FLUID_PARTICLES * 32 * 3 * 6];
+                int fluidVertexIndex = 0;
+                for (int i = 0; i < MAX_FLUID_PARTICLES; i++)
+                {
+                    if (fluidParticles[i].active)
+                    {
+                        // Color particles by speed (laminar = blue, turbulent = red)
+                        glm::vec3 particleColor;
+                        float speed = sqrt(fluidParticles[i].vx * fluidParticles[i].vx + fluidParticles[i].vy * fluidParticles[i].vy);
+                        if (speed < streamSpeed * 1.5f)
+                        {
+                            particleColor = glm::vec3(0.0f, 0.5f, 1.0f); // Blue for laminar
+                        }
+                        else
+                        {
+                            particleColor = glm::vec3(1.0f, 0.3f, 0.0f); // Orange/red for turbulent
+                        }
+                        createCircle(fluidParticles[i].x, fluidParticles[i].y, fluidParticles[i].radius, particleColor, fluidParticleVertices, fluidVertexIndex);
+                    }
+                }
+                unsigned int fpVBO, fpVAO;
+                glGenVertexArrays(1, &fpVAO);
+                glGenBuffers(1, &fpVBO);
+                glBindVertexArray(fpVAO);
+                glBindBuffer(GL_ARRAY_BUFFER, fpVBO);
+                glBufferData(GL_ARRAY_BUFFER, sizeof(fluidParticleVertices), fluidParticleVertices, GL_STATIC_DRAW);
+                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+                glEnableVertexAttribArray(0);
+                glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+                glEnableVertexAttribArray(1);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                glBindVertexArray(fpVAO);
+                glDrawArrays(GL_TRIANGLES, 0, fluidVertexIndex / 6);
+                glDeleteVertexArrays(1, &fpVAO);
+                glDeleteBuffers(1, &fpVBO);
+
+                // Draw back button
+                glBindVertexArray(backVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
                 break;
+            }
             default:
                 demoColor = glm::vec3(0.5f, 0.5f, 0.5f);
                 demoName = "Unknown Demo";
                 break;
             }
-            // Set clear color to demo color
-            glClearColor(demoColor.r, demoColor.g, demoColor.b, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT);
 
-            // Draw the back button
-            glUseProgram(shaderProgram);
-            glm::mat4 projection = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, -1.0f, 1.0f);
-            glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-            glm::mat4 model = glm::mat4(1.0f);
-            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-            glBindVertexArray(backVAO);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
+            // Handle other demo screens (default only)
+            if (currentScreen != Screen::GREEN_DEMO && currentScreen != Screen::YELLOW_DEMO)
+            {
+                // Set clear color to demo color
+                glClearColor(demoColor.r, demoColor.g, demoColor.b, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT);
+
+                // Draw the back button
+                glUseProgram(shaderProgram);
+                projection = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, -1.0f, 1.0f);
+                glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+                model = glm::mat4(1.0f);
+                glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+                glBindVertexArray(backVAO);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+            }
         }
 
         // Swap buffers and poll IO events
@@ -1021,6 +1970,8 @@ int main()
     glDeleteBuffers(1, &ballVBO);
     glDeleteVertexArrays(1, &squareVAO);
     glDeleteBuffers(1, &squareVBO);
+    glDeleteVertexArrays(1, &pendulumStringVAO);
+    glDeleteBuffers(1, &pendulumStringVBO);
     glDeleteProgram(shaderProgram);
 
     // Clean up
