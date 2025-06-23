@@ -60,6 +60,12 @@ struct Ball
 // Ball initialization function prototype
 void initBalls(int count);
 
+// Square mass initialization function prototype
+void initSquareMasses(float massRatio);
+
+// Reset blue squares to initial state
+void resetSquares();
+
 // Ball count selection buttons for red demo
 struct BallCountButton
 {
@@ -74,10 +80,40 @@ BallCountButton ballCountButtons[] = {
     {0.5f, 0.75f, 0.5f, 0.08f, 50, "50 Balls"}};
 const int NUM_BALL_COUNT_BUTTONS = 3;
 
+// Mass selection buttons for blue demo
+struct MassButton
+{
+    float x, y, width, height;
+    float massRatio;
+    const char *label;
+};
+
+MassButton massButtons[] = {
+    {-0.9f, 0.6f, 0.5f, 0.08f, 1.0f, "Equal Mass"},
+    {-0.2f, 0.6f, 0.5f, 0.08f, 2.0f, "2x Mass"},
+    {0.5f, 0.6f, 0.5f, 0.08f, 10.0f, "10x Mass"}};
+const int NUM_MASS_BUTTONS = 3;
+
 // Ball array and count
 const int MAX_BALLS = 50;
 Ball balls[MAX_BALLS];
 int NUM_BALLS = 5;
+
+// Square physics properties
+struct Square
+{
+    float x, y;
+    float vx, vy;
+    float size;
+    float mass;
+    glm::vec3 color;
+};
+
+Square square = {0.0f, 0.0f, 0.004f, 0.0f, 0.1f, 1.0f, glm::vec3(0.0f, 0.0f, 1.0f)};
+Square square2 = {0.3f, 0.0f, -0.003f, 0.0f, 0.1f, 1.0f, glm::vec3(0.0f, 0.0f, 1.0f)};
+
+const int NUM_SQUARES = 2;
+Square squares[NUM_SQUARES] = {square, square2};
 
 // Box boundaries
 const float BOX_LEFT = -0.8f;
@@ -183,6 +219,27 @@ void mouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
                     normalizedY >= b.y && normalizedY <= b.y + b.height)
                 {
                     initBalls(b.count);
+                    return;
+                }
+            }
+            // Check if back button was clicked
+            if (normalizedX >= backButton.x && normalizedX <= backButton.x + backButton.width &&
+                normalizedY >= backButton.y && normalizedY <= backButton.y + backButton.height)
+            {
+                currentScreen = Screen::MAIN_MENU;
+            }
+        }
+        else if (currentScreen == Screen::BLUE_DEMO)
+        {
+            // Check if a mass button was clicked
+            for (int i = 0; i < NUM_MASS_BUTTONS; i++)
+            {
+                MassButton &b = massButtons[i];
+                if (normalizedX >= b.x && normalizedX <= b.x + b.width &&
+                    normalizedY >= b.y && normalizedY <= b.y + b.height)
+                {
+                    initSquareMasses(b.massRatio);
+                    resetSquares();
                     return;
                 }
             }
@@ -399,6 +456,155 @@ void updateBall()
     }
 }
 
+// Create a square vertex data
+void createSquareVertices(float centerX, float centerY, float size, glm::vec3 color, float vertices[], int &vertexIndex)
+{
+    float halfSize = size * 0.5f;
+
+    // Top-left
+    vertices[vertexIndex++] = centerX - halfSize;
+    vertices[vertexIndex++] = centerY + halfSize;
+    vertices[vertexIndex++] = 0.0f;
+    vertices[vertexIndex++] = color.r;
+    vertices[vertexIndex++] = color.g;
+    vertices[vertexIndex++] = color.b;
+
+    // Top-right
+    vertices[vertexIndex++] = centerX + halfSize;
+    vertices[vertexIndex++] = centerY + halfSize;
+    vertices[vertexIndex++] = 0.0f;
+    vertices[vertexIndex++] = color.r;
+    vertices[vertexIndex++] = color.g;
+    vertices[vertexIndex++] = color.b;
+
+    // Bottom-right
+    vertices[vertexIndex++] = centerX + halfSize;
+    vertices[vertexIndex++] = centerY - halfSize;
+    vertices[vertexIndex++] = 0.0f;
+    vertices[vertexIndex++] = color.r;
+    vertices[vertexIndex++] = color.g;
+    vertices[vertexIndex++] = color.b;
+
+    // Top-left
+    vertices[vertexIndex++] = centerX - halfSize;
+    vertices[vertexIndex++] = centerY + halfSize;
+    vertices[vertexIndex++] = 0.0f;
+    vertices[vertexIndex++] = color.r;
+    vertices[vertexIndex++] = color.g;
+    vertices[vertexIndex++] = color.b;
+
+    // Bottom-right
+    vertices[vertexIndex++] = centerX + halfSize;
+    vertices[vertexIndex++] = centerY - halfSize;
+    vertices[vertexIndex++] = 0.0f;
+    vertices[vertexIndex++] = color.r;
+    vertices[vertexIndex++] = color.g;
+    vertices[vertexIndex++] = color.b;
+
+    // Bottom-left
+    vertices[vertexIndex++] = centerX - halfSize;
+    vertices[vertexIndex++] = centerY - halfSize;
+    vertices[vertexIndex++] = 0.0f;
+    vertices[vertexIndex++] = color.r;
+    vertices[vertexIndex++] = color.g;
+    vertices[vertexIndex++] = color.b;
+}
+
+// Square mass initialization function
+void initSquareMasses(float massRatio)
+{
+    squares[0].mass = 1.0f;
+    squares[1].mass = massRatio;
+}
+
+// Reset blue squares to initial state
+void resetSquares()
+{
+    squares[0].x = 0.0f;
+    squares[0].y = 0.0f;
+    squares[0].vx = 0.004f;
+    squares[0].vy = 0.0f;
+    squares[0].size = 0.1f;
+    squares[0].color = glm::vec3(0.0f, 0.0f, 1.0f);
+
+    squares[1].x = 0.3f;
+    squares[1].y = 0.0f;
+    squares[1].vx = -0.003f;
+    squares[1].vy = 0.0f;
+    squares[1].size = 0.1f;
+    squares[1].color = glm::vec3(0.0f, 0.0f, 1.0f);
+}
+
+// Update square physics
+void updateSquare()
+{
+    // Update position for all squares
+    for (int i = 0; i < NUM_SQUARES; i++)
+    {
+        // Apply small damping to prevent energy buildup
+        squares[i].vx *= 1.0f; // No damping for now
+        squares[i].vy *= 1.0f;
+
+        squares[i].x += squares[i].vx;
+        squares[i].y += squares[i].vy;
+
+        // Check collision with walls
+        if (squares[i].x - squares[i].size * 0.5f <= BOX_LEFT || squares[i].x + squares[i].size * 0.5f >= BOX_RIGHT)
+        {
+            squares[i].vx = -squares[i].vx;
+            // Clamp position to prevent sticking
+            if (squares[i].x - squares[i].size * 0.5f <= BOX_LEFT)
+                squares[i].x = BOX_LEFT + squares[i].size * 0.5f;
+            if (squares[i].x + squares[i].size * 0.5f >= BOX_RIGHT)
+                squares[i].x = BOX_RIGHT - squares[i].size * 0.5f;
+        }
+
+        if (squares[i].y - squares[i].size * 0.5f <= BOX_BOTTOM || squares[i].y + squares[i].size * 0.5f >= BOX_TOP)
+        {
+            squares[i].vy = -squares[i].vy;
+            // Clamp position to prevent sticking
+            if (squares[i].y - squares[i].size * 0.5f <= BOX_BOTTOM)
+                squares[i].y = BOX_BOTTOM + squares[i].size * 0.5f;
+            if (squares[i].y + squares[i].size * 0.5f >= BOX_TOP)
+                squares[i].y = BOX_TOP - squares[i].size * 0.5f;
+        }
+    }
+
+    // Check square-to-square collisions (1D horizontal only)
+    for (int i = 0; i < NUM_SQUARES; i++)
+    {
+        for (int j = i + 1; j < NUM_SQUARES; j++)
+        {
+            float dx = squares[j].x - squares[i].x;
+            float distance = fabs(dx);
+            float minDistance = squares[i].size * 0.5f + squares[j].size * 0.5f;
+
+            if (distance < minDistance && distance > 0.001f)
+            {
+                // Only handle if moving toward each other (1D)
+                if ((squares[j].vx - squares[i].vx) * (squares[j].x - squares[i].x) >= 0)
+                    continue;
+
+                // Separate squares
+                float overlap = minDistance - distance;
+                float separation = overlap * 0.5f * (dx > 0 ? 1.0f : -1.0f);
+                squares[i].x -= separation;
+                squares[j].x += separation;
+
+                // 1D elastic collision equations for vx
+                float m1 = squares[i].mass;
+                float m2 = squares[j].mass;
+                float v1 = squares[i].vx;
+                float v2 = squares[j].vx;
+                float v1p = ((m1 - m2) * v1 + 2 * m2 * v2) / (m1 + m2);
+                float v2p = ((m2 - m1) * v2 + 2 * m1 * v1) / (m1 + m2);
+                squares[i].vx = v1p;
+                squares[j].vx = v2p;
+            }
+        }
+    }
+}
+
 int main()
 {
     // Initialize GLFW
@@ -533,6 +739,14 @@ int main()
         createCircle(balls[i].x, balls[i].y, balls[i].radius, balls[i].color, ballVertices, ballVertexIndex);
     }
 
+    // Square vertex data (will be updated each frame)
+    float squareVertices[NUM_SQUARES * 6 * 6]; // NUM_SQUARES * 6 vertices * 6 floats per vertex
+    int squareVertexIndex = 0;
+    for (int i = 0; i < NUM_SQUARES; i++)
+    {
+        createSquareVertices(squares[i].x, squares[i].y, squares[i].size, squares[i].color, squareVertices, squareVertexIndex);
+    }
+
     // Vertex Buffer Object (VBO) and Vertex Array Object (VAO) for main menu buttons
     unsigned int VBO, VAO;
     glGenVertexArrays(1, &VAO);
@@ -590,12 +804,30 @@ int main()
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
+    // VBO/VAO for square (dynamic)
+    unsigned int squareVBO, squareVAO;
+    glGenVertexArrays(1, &squareVAO);
+    glGenBuffers(1, &squareVBO);
+    glBindVertexArray(squareVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, squareVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(squareVertices), squareVertices, GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
     // Get uniform locations
     unsigned int modelLoc = glGetUniformLocation(shaderProgram, "model");
     unsigned int projectionLoc = glGetUniformLocation(shaderProgram, "projection");
 
     // Initialize balls
     initBalls(5);
+
+    // Initialize squares with equal mass
+    initSquareMasses(1.0f);
+    resetSquares();
 
     // Render loop
     while (!glfwWindowShouldClose(window))
@@ -607,6 +839,10 @@ int main()
         if (currentScreen == Screen::RED_DEMO)
         {
             updateBall();
+        }
+        else if (currentScreen == Screen::BLUE_DEMO)
+        {
+            updateSquare();
         }
 
         // Render
@@ -680,6 +916,61 @@ int main()
             glBindVertexArray(backVAO);
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
+        else if (currentScreen == Screen::BLUE_DEMO)
+        {
+            // Blue demo - bouncing squares
+            glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black background
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            glUseProgram(shaderProgram);
+            glm::mat4 projection = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, -1.0f, 1.0f);
+            glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+            glm::mat4 model = glm::mat4(1.0f);
+            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+            // Draw box walls
+            glBindVertexArray(boxVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 4 * 6); // 4 walls * 6 vertices
+
+            // Draw mass buttons
+            float massButtonVertices[NUM_MASS_BUTTONS * 6 * 6];
+            int mbVertexIndex = 0;
+            for (int i = 0; i < NUM_MASS_BUTTONS; i++)
+            {
+                glm::vec3 color = glm::vec3(0.3f, 0.3f, 0.3f);
+                createRectangle(massButtons[i].x, massButtons[i].y, massButtons[i].width, massButtons[i].height, color, massButtonVertices, mbVertexIndex);
+            }
+            unsigned int mbVBO, mbVAO;
+            glGenVertexArrays(1, &mbVAO);
+            glGenBuffers(1, &mbVBO);
+            glBindVertexArray(mbVAO);
+            glBindBuffer(GL_ARRAY_BUFFER, mbVBO);
+            glBufferData(GL_ARRAY_BUFFER, sizeof(massButtonVertices), massButtonVertices, GL_STATIC_DRAW);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+            glEnableVertexAttribArray(0);
+            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+            glEnableVertexAttribArray(1);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            glBindVertexArray(mbVAO);
+            glDrawArrays(GL_TRIANGLES, 0, NUM_MASS_BUTTONS * 6);
+            glDeleteVertexArrays(1, &mbVAO);
+            glDeleteBuffers(1, &mbVBO);
+
+            // Update and draw all squares
+            squareVertexIndex = 0;
+            for (int i = 0; i < NUM_SQUARES; i++)
+            {
+                createSquareVertices(squares[i].x, squares[i].y, squares[i].size, squares[i].color, squareVertices, squareVertexIndex);
+            }
+            glBindVertexArray(squareVAO);
+            glBindBuffer(GL_ARRAY_BUFFER, squareVBO);
+            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(squareVertices), squareVertices);
+            glDrawArrays(GL_TRIANGLES, 0, NUM_SQUARES * 6); // NUM_SQUARES * 6 vertices for squares
+
+            // Draw back button
+            glBindVertexArray(backVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
         else
         {
             // Other demo screens
@@ -687,10 +978,6 @@ int main()
             const char *demoName;
             switch (currentScreen)
             {
-            case Screen::BLUE_DEMO:
-                demoColor = glm::vec3(0.0f, 0.0f, 1.0f);
-                demoName = "Blue Demo";
-                break;
             case Screen::GREEN_DEMO:
                 demoColor = glm::vec3(0.0f, 1.0f, 0.0f);
                 demoName = "Green Demo";
@@ -732,6 +1019,8 @@ int main()
     glDeleteBuffers(1, &boxVBO);
     glDeleteVertexArrays(1, &ballVAO);
     glDeleteBuffers(1, &ballVBO);
+    glDeleteVertexArrays(1, &squareVAO);
+    glDeleteBuffers(1, &squareVBO);
     glDeleteProgram(shaderProgram);
 
     // Clean up
